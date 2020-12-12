@@ -1,0 +1,131 @@
+---
+title: "Days Between Games"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(lubridate)
+```
+
+```{r data_setup, include=FALSE}
+
+pbp <- readRDS("data/pbp_2020-2019.rds")
+pbp2 <- readRDS("data/pbp_2020.rds")
+
+pbp_all <- bind_rows(pbp, pbp2)
+
+rm(pbp)
+rm(pbp2)
+```
+
+## Days Between Games
+
+```{r days_between_games}
+
+pbp_all <- pbp_all %>% 
+  mutate(game_date = ymd(game_date))
+
+```
+
+Get scoreboard for the games, each record is a team in a game, Columns: Home field, win, tie, points scored, game date
+
+```{r after_date_formated}
+
+games <- pbp_all %>% 
+  filter(!is.na(home_team), home_team != "") %>% 
+  filter(season_type == "REG")
+
+
+scores <- games %>% 
+  group_by(game_id, game_date, home_team, away_team) %>% 
+  summarise(
+    home_score = max(home_score, na.rm = TRUE),
+    away_score = max(away_score, na.rm = TRUE)
+  ) %>% 
+  mutate(
+    home_win = ifelse(home_score > away_score, TRUE, FALSE),
+    home_loss = ifelse(away_score > home_score, TRUE, FALSE),
+    tie = ifelse(away_score == home_score, TRUE, FALSE)
+  ) %>% 
+  pivot_longer(
+    cols = home_team:away_team,
+    names_to = "location_type",
+    values_to = "team"
+  ) %>% 
+  mutate(win = ifelse(location_type == "home_team" & home_win == TRUE, TRUE, FALSE)) %>% 
+  mutate(loss = ifelse(win == FALSE & tie == FALSE, TRUE, FALSE),
+         score = ifelse(location_type == 'home_team', home_score, away_score),
+         home_field = ifelse(location_type == "home_team", TRUE, FALSE)) %>% 
+  select(-home_win, -home_loss, -home_score, -away_score, -location_type) %>% 
+  ungroup() 
+```
+
+```{r days_rest}
+
+days_rest <- scores %>% 
+  mutate(month = month(game_date)) %>% 
+  filter(month > 8) %>% 
+  mutate(year = year(game_date)) %>% 
+  group_by(team, year) %>% 
+  arrange(team, game_date) %>% 
+  mutate(days_rest = difftime(game_date, lag(game_date), units = 'days') %>% as.numeric()) %>% 
+  ungroup()
+
+```
+
+
+```{r}
+
+regressor <- glm(win ~ days_rest, data = days_rest %>% filter(!is.na(days_rest)), family = "binomial")
+
+summary(regressor)
+confint(regressor)
+exp(coef(regressor))
+```
+
+```{r}
+regressor <- lm(score ~ days_rest, data = days_rest)
+summary(regressor)
+
+plot(regressor)
+days_rest %>% count(win)
+```
+
+
+```{r}
+lm(win~score, data = days_rest) %>% summary()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
